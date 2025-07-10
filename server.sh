@@ -1,1 +1,1 @@
-./bazel-bin/server/server
+bazel run //server:server

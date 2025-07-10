@@ -1,1 +1,1 @@
-./bazel-bin/client/client
+bazel run //client:client
