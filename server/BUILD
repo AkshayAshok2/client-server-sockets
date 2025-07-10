@@ -1,5 +1,5 @@
 cc_binary(
     name = "server",
     srcs = ["server.cc"],
-    copts = ["-std=c++20"]
+    deps = ["//utils:utils", "//protocol:protocol", "//protocol:serialization"],
 )

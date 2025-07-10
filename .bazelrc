@@ -1,0 +1,21 @@
+# Bazel configuration for C++ builds
+
+# Use clang as the default C++ compiler
+build --action_env=CC=clang
+build --action_env=CXX=clang++
+
+# For host tools Bazel compiles
+build --host_action_env=CC=clang
+build --host_action_env=CXX=clang++
+
+# Enable C++20 standard
+build --cxxopt=-std=c++20
+build --cxxopt=-stdlib=libc++
+build --cxxopt=-mmacosx-version-min=10.15
+build --cxxopt=-D_LIBCPP_DISABLE_AVAILABILITY
+
+# Optimization and warning flags
+build --cxxopt=-Wall
+build --cxxopt=-Wextra
+build --cxxopt=-O2
+build --cxxopt=-g

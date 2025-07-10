@@ -1,5 +1,5 @@
 cc_binary(
     name = "client",
     srcs = ["client.cc"],
-    copts = ["-std=c++20"]
+    deps = ["//utils:sha256", "//utils:utils", "//protocol:protocol", "//protocol:serialization"],
 )
