@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -73,6 +74,7 @@ void ClientApp::HandleList() {
   protocol::ListResponse response = protocol::DeserializeList(receive_buffer);
 
   // Show the list of files and store in app state
+  this->server_files_.clear();
   std::cout << "Received LIST response with " << static_cast<int>(response.file_count) << " files." << "\n";
   for (const auto &file : response.files) {
     std::cout << "File: " << file.name << "\nHash: " << file.hash << "\n";
@@ -84,7 +86,7 @@ void ClientApp::HandleList() {
 }
 
 void ClientApp::HandleDiff() {
-  if (this->state_ != State::Listed || this->state_ != State::Diffed || this->state_ != State::Pulled) {
+  if (this->state_ != State::Listed || this->state_ == State::Diffed || this->state_ == State::Pulled) {
     std::cout << "You must LIST files before performing DIFF." << "\n";
     return;
   }
@@ -126,7 +128,7 @@ void ClientApp::HandleDiff() {
 }
 
 void ClientApp::HandlePull() {
-  if (this->state_ != State::Diffed || this->state_ != State::Pulled) {
+  if (this->state_ != State::Diffed || this->state_ == State::Pulled) {
     std::cout << "You must DIFF files before performing PULL." << "\n";
     return;
   }
@@ -167,40 +169,55 @@ void ClientApp::HandlePull() {
     total_bytes_sent += bytes_sent;
   }
 
-  // Receive PULL response header from server
-  uint32_t total_size;
-  protocol::MessageHeader pull_response_header;
-  std::array<uint8_t, 5> received_serialized_header;
+  // Receive PULL response from server
+  unsigned int n_files = this->diff_files_.size();
 
-  if (recv(this->client_socket_, received_serialized_header.data(), received_serialized_header.size(), 0) != received_serialized_header.size()) {
-    FatalError("recv() failed for PULL response header");
-  }
+  for (unsigned int i = 0; i < n_files; i++) {
+    std::array<uint8_t, 5> response_header_buffer;
 
-  pull_response_header = protocol::DeserializeHeader(received_serialized_header);
-  total_size = pull_response_header.payload_size;
-
-  // Receive PULL response payload from server
-  std::vector<uint8_t> receive_buffer(total_size);
-  unsigned int total_bytes_received = 0;
-  int bytes_received;
-
-  while (total_bytes_received < total_size) {
-    bytes_received = recv(this->client_socket_, receive_buffer.data() + total_bytes_received, total_size - total_bytes_received, 0);
-
-    if (bytes_received < 0) {
-      FatalError("recv() failed for PULL response payload");
-    } else if (bytes_received == 0) {
-      FatalError("Server disconnected while sending PULL response.");
+    // Receive response header
+    if (recv(this->client_socket_, response_header_buffer.data(), response_header_buffer.size(), 0) != response_header_buffer.size()) {
+      FatalError("recv() failed for PULL response header");
     }
 
-    total_bytes_received += bytes_received;
+    protocol::MessageHeader response_header = protocol::DeserializeHeader(response_header_buffer);
+    uint32_t payload_size = response_header.payload_size;
+
+    // Receive response payload
+    std::vector<uint8_t> receive_buffer(payload_size);
+    unsigned int total_bytes_received = 0;
+    int bytes_received;
+    
+    while (total_bytes_received < payload_size) {
+      bytes_received = recv(this->client_socket_, receive_buffer.data() + total_bytes_received, payload_size - total_bytes_received, 0);
+
+      if (bytes_received < 0) {
+        FatalError("recv() failed for PULL response file bytes");
+      } else if (bytes_received == 0) {
+        FatalError("Server disconnected while sending PULL response file bytes.");
+      }
+
+      total_bytes_received += bytes_received;
+    }
+
+    protocol::FileContents file = protocol::DeserializeFileContents(receive_buffer);
+
+    // Initialize data directory
+    std::filesystem::path data_dir = std::filesystem::current_path() / "client" / "files";
+    WriteFileBytes(file, data_dir);
+
+    std::cout << "Received and wrote file: " << file.header.name << "\n";
   }
 }
 
 void ClientApp::HandleLeave() {
-  uint8_t leave = static_cast<uint8_t>(protocol::Command::LEAVE);
+  protocol::MessageHeader header {
+    .command = protocol::Command::LEAVE,
+    .payload_size = 0
+  };
+  std::array<uint8_t, 5> serialized_header = protocol::SerializeHeader(header);
 
-  if (send(this->client_socket_, &leave, sizeof(leave), 0) != sizeof(leave)) {
+  if (send(this->client_socket_, serialized_header.data(), serialized_header.size(), 0) != serialized_header.size()) {
     FatalError("send() failed for LEAVE command");
   }
 

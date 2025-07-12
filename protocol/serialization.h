@@ -11,4 +11,6 @@ namespace protocol {
     PullRequest DeserializePullRequest(const std::vector<uint8_t>& in);
     std::vector<uint8_t> SerializePullResponse(const PullResponse& response);
     PullResponse DeserializePullResponse(const std::vector<uint8_t>& in);
+    std::vector<uint8_t> SerializeFileContents(const FileContents& file);
+    FileContents DeserializeFileContents(const std::vector<uint8_t>& in);
 }

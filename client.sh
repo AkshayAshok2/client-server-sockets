@@ -1,1 +1,2 @@
-bazel run //client:client
+bazel build //client:client
+./bazel-bin/client/client

@@ -44,3 +44,46 @@ std::vector<protocol::FileHeader> ListFilesWithHashes(const std::filesystem::pat
 
   return out;
 }
+
+std::vector<uint8_t> ReadFileBytes(const std::filesystem::path &file_path) {
+  std::error_code ec;
+  uint32_t size = std::filesystem::file_size(file_path, ec);
+
+  if (ec) {
+    FatalError("Unable to stat file: " + file_path.string() + " : " + ec.message());
+  }
+
+  std::ifstream in(file_path, std::ios::binary);
+
+  if (!in) {
+    FatalError("Failed to open file: " + file_path.string());
+  }
+
+  std::vector<uint8_t> buffer(size);
+  if (!in.read(reinterpret_cast<char *>(buffer.data()), size)) {
+    FatalError("Failed to read file: " + file_path.string());
+  }
+
+  return buffer;
+}
+
+void WriteFileBytes(const protocol::FileContents& file, const std::filesystem::path& data_dir) {
+  std::filesystem::path file_path = data_dir / file.header.name;
+
+  // Ensure the directory exists
+  std::filesystem::create_directories(file_path.parent_path());
+
+  std::ofstream out(file_path, std::ios::binary);
+  if (!out) {
+    FatalError("Failed to open file for writing: " + file_path.string());
+  }
+
+  std::cout << "Number of bytes in file: " << file.bytes.size() << "\n";
+  out.write(reinterpret_cast<const char *>(file.bytes.data()), file.size);
+  if (!out) {
+    FatalError("Failed to write to file: " + file_path.string());
+  }
+
+  out.close();
+  std::cout << "File written: " << file_path.string() << "\n";
+}

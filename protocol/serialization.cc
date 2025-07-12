@@ -162,6 +162,7 @@ namespace protocol {
     return request;
   }
 
+  // Avoid serializing/deserializing all files at once, go one file at a time
   std::vector<uint8_t> SerializePullResponse(const PullResponse& response) {
     std::vector<uint8_t> out;
     out.push_back(response.file_count);
@@ -171,18 +172,104 @@ namespace protocol {
       out.insert(out.end(), file.header.name.begin(), file.header.name.end());
       out.push_back(file.header.hash_length);
       out.insert(out.end(), file.header.hash.begin(), file.header.hash.end());
-      uint64_t file_size = htonll(file.file_size);
+      uint64_t file_size = htonll(file.size);
       out.insert(out.end(), reinterpret_cast<uint8_t*>(&file_size), reinterpret_cast<uint8_t*>(&file_size) + sizeof(file_size));
-      
-      for (const auto& chunk : file.chunks) {
-        out.push_back(static_cast<uint8_t>(chunk.chunk_size >> 24));
-        out.push_back(static_cast<uint8_t>(chunk.chunk_size >> 16));
-        out.push_back(static_cast<uint8_t>(chunk.chunk_size >> 8));
-        out.push_back(static_cast<uint8_t>(chunk.chunk_size));
-        out.insert(out.end(), chunk.chunk_data.begin(), chunk.chunk_data.end());
-      }
+      out.insert(out.end(), file.bytes.begin(), file.bytes.end());
     }
 
     return out;
+  }
+
+  std::vector<uint8_t> SerializeFileContents(const FileContents& file) {
+    std::vector<uint8_t> out;
+
+    out.push_back(file.header.name_length);
+    out.insert(out.end(), file.header.name.begin(), file.header.name.end());
+    out.push_back(file.header.hash_length);
+    out.insert(out.end(), file.header.hash.begin(), file.header.hash.end());
+    uint32_t file_size = htonl(file.size);
+    out.insert(out.end(), reinterpret_cast<uint8_t*>(&file_size), reinterpret_cast<uint8_t*>(&file_size) + sizeof(file_size));
+    out.insert(out.end(), file.bytes.begin(), file.bytes.end());
+
+    return out;
+  }
+
+  FileContents DeserializeFileContents(const std::vector<uint8_t>& in) {
+    FileContents file;
+    FileHeader file_header;
+    size_t offset = 0;
+
+    if (in.empty()) {
+      FatalError("Empty input for FileContents deserialization");
+    }
+
+    file_header.name_length = in[offset++];
+    file_header.name = std::string(in.begin() + offset, in.begin() + offset + file_header.name_length);
+    offset += file_header.name_length;
+    file_header.hash_length = in[offset++];
+    file_header.hash = std::string(in.begin() + offset, in.begin() + offset + file_header.hash_length);
+    offset += file_header.hash_length;
+
+    file.size = ntohl(*reinterpret_cast<const uint32_t*>(in.data() + offset));
+    offset += sizeof(file.size);
+
+    file.bytes = std::vector<uint8_t>(in.begin() + offset, in.end());
+    file.header = file_header;
+
+    return file;
+  }
+
+  PullResponse DeserializePullResponse(const std::vector<uint8_t> &in) {
+    PullResponse response;
+    
+    if (in.empty()) {
+      FatalError("Empty input for PullResponse deserialization");
+    }
+
+    size_t offset = 0;
+    uint8_t current_file_count = 0;
+    response.file_count = in[offset++];
+    response.files = std::vector<FileContents>();
+    
+    while (offset < in.size()) {
+      uint8_t file_name_length = in[offset++];
+
+      if (offset + file_name_length > in.size()) {
+        FatalError("Invalid input for PullResponse deserialization: file name length exceeds input size");
+      }
+
+      std::string file_name(in.begin() + offset, in.begin() + offset + file_name_length);
+      offset += file_name_length;
+
+      if (offset >= in.size()) {
+        FatalError("Invalid input for PullResponse deserialization: not enough data for file hash");
+      }
+
+      uint8_t file_hash_length = in[offset++];
+
+      if (offset + file_hash_length > in.size()) {
+        FatalError("Invalid input for PullResponse deserialization: file hash length exceeds input size");
+      }
+
+      std::string file_hash(in.begin() + offset, in.begin() + offset + file_hash_length);
+      offset += file_hash_length;
+
+      uint32_t file_size;
+      std::memcpy(&file_size, in.data() + offset, sizeof(file_size));
+      file_size = ntohll(file_size);
+      offset += sizeof(file_size);
+
+      FileContents file_contents{
+        .header = {file_name_length, file_name, file_hash_length, file_hash},
+        .size = file_size,
+        .bytes = std::vector<uint8_t>(in.begin() + offset, in.begin() + offset + file_size)
+      };
+
+      offset = in.size();
+      response.files.push_back(file_contents);
+      current_file_count++;
+    }
+
+    return response;
   }
 }

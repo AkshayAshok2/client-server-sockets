@@ -25,15 +25,10 @@ namespace protocol {
     std::string hash;
   };
 
-  struct FileChunk {
-    uint32_t chunk_size;
-    std::vector<uint8_t> chunk_data;
-  };
-
   struct FileContents {
     FileHeader header;
-    uint64_t file_size;
-    std::vector<FileChunk> chunks;
+    uint32_t size;
+    std::vector<uint8_t> bytes;
   };
 
   struct MessageHeader {
